@@ -19,6 +19,20 @@ class UserPrompt(object):
     def get_hidden(self):
         return getpass.getpass(self.prompt)
 
+class FileWriter(object):
+
+    def write(self, path, content):
+        print "Writing config to " + path
+        if not os.path.exists(os.path.dirname(path)):
+            try:
+                os.makedirs(os.path.dirname(path))
+            except OSError as exc: # Guard against race condition
+                if exc.errno != errno.EEXIST:
+                    raise
+        with open(path, 'w') as outfile:
+            outfile.write(content)
+        print "Done writing " + path
+
 class InfoGatherer(object):
 
     def __init__(self, name, host_info):
@@ -40,35 +54,24 @@ class AmbariInfo(InfoGatherer):
         return self.host_info
 
     def collect(self, out_dir):
-        # Retrieving Ambari config detail
         print "Ambari request URL: " + self.ambari_config_url
         ambari_user = UserPrompt('Ambari username: ').get_hidden()
         ambari_pass = UserPrompt('Ambari password: ').get_hidden()
+        self.get_cluster_config(out_dir, ambari_user, ambari_pass)
+
+    def get_cluster_config(self, out_dir, ambari_user, ambari_pass):
+        # set encoding to 'identity' to keep Ambari from passing back gzipped content for large requests
         headers = {
                     'X-Requested-By' : 'ambari',
                     'Authorization' : 'Basic',
                     'Accept-Encoding': 'identity'
                   }
+        # Retrieving Ambari config detail
         response = requests.get(self.ambari_config_url, headers=headers, params=self.params_payload, stream=True, auth=HTTPBasicAuth(ambari_user, ambari_pass))
         if response.status_code == 200:
-            print "status code: " + str(response.status_code)
-            #print "encoding: " + response.encoding
-            #print "result headers: " + str(response.headers)
-            #print "request headers: " + str(response.request.headers)
-            #print "text: " + response.text
             file_name = 'ambari-cluster-config.json'
             full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
-            print "Writing config to " + full_out_path
-            if not os.path.exists(os.path.dirname(full_out_path)):
-                try:
-                    os.makedirs(os.path.dirname(full_out_path))
-                except OSError as exc: # Guard against race condition
-                    if exc.errno != errno.EEXIST:
-                        raise
-            with open(full_out_path, 'w') as outfile:
-                outfile.write(response.text)
-            print "Done writing " + full_out_path
-            
+            FileWriter().write(full_out_path, response.text)
         else:
             print "Request failed with status code: " + str(response.status_code)
 
