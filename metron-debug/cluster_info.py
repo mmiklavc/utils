@@ -2,6 +2,7 @@
 
 from optparse import OptionParser
 from requests.auth import HTTPBasicAuth
+from contextlib import closing
 import datetime
 import os
 import os.path
@@ -10,6 +11,7 @@ import getpass
 import requests
 import json
 import sys
+import tarfile
 
 INDENT_SIZE = 2
 
@@ -272,7 +274,7 @@ class ClusterInfo:
                      zookeeper_quorum,
                      metron_home,
                      hdp_home):
-        out_dir = os.path.join(out_dir_base, 'metron-debug-' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+        out_dir = self.get_out_dirname(out_dir_base)
         info_getters = [
                 AmbariInfo(ambari_host, cluster_name),
                 StormInfo(storm_host),
@@ -281,10 +283,22 @@ class ClusterInfo:
                 MetronInfo(metron_home),
                 HdpInfo(hdp_home)
         ]
-        #for getter in info_getters:
-        #    getter.collect()
-        info_getters[0].collect(out_dir)
-        info_getters[1].collect(out_dir)
+        for getter in info_getters:
+            getter.collect(out_dir)
+        self.compress_files(out_dir)
+        print "Finished gathering debug info"
+
+    # creates dir w/timestamp to drop all configs
+    # e.g. metron-debug-2018-03-24_06-50-34
+    def get_out_dirname(self, out_dir_base):
+        return os.path.join(out_dir_base, 'metron-debug-' + datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+
+    def compress_files(self, out_dir):
+        tarball_name = out_dir + '.tgz'
+        print "Creating tarfile bundle with all configs: '{0}'".format(tarball_name)
+        with closing(tarfile.open(tarball_name, 'w:gz')) as tar:
+            tar.add(out_dir, arcname=os.path.basename(out_dir))
+        print "...done"
 
 if __name__ == "__main__":
     ClusterInfo().main()
