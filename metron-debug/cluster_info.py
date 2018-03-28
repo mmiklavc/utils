@@ -11,6 +11,8 @@ import requests
 import json
 import sys
 
+INDENT_SIZE = 2
+
 class UserPrompt(object):
     
     def __init__(self, prompt):
@@ -31,7 +33,7 @@ class FileWriter(object):
                     raise
         with open(path, 'w') as outfile:
             outfile.write(content)
-        print "Done writing " + path
+        print "...done"
 
 class InfoGatherer(object):
 
@@ -79,13 +81,66 @@ class StormInfo(InfoGatherer):
 
     def __init__(self, host_info):
         super(StormInfo, self).__init__('Storm', host_info)
-        self.storm_url = 'http://{0}/api/v1/topology/summary'
+        url_base = 'http://{0}/api/v1'.format(host_info)
+        self.url_cluster_summary = url_base + '/cluster/summary'
+        self.url_cluster_configuration = url_base + '/cluster/configuration'
+        self.url_topology_summary = url_base + '/topology/summary'
+        self.url_topology_stats_summary = url_base + '/topology/{0}?sys=1'
 
     def get_host(self):
         return self.host_info
 
-    def collect(self):
-        pass
+    def collect(self, out_dir):
+        self.get_cluster_summary(out_dir)
+        self.get_cluster_configuration(out_dir)
+        self.get_topology_summary(out_dir)
+        self.get_topology_stats_summary(out_dir)
+
+    def get_cluster_summary(self, out_dir):
+        response = requests.get(self.url_cluster_summary)
+        if response.status_code == 200:
+            file_name = 'cluster-summary.json'
+            full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
+            FileWriter().write(full_out_path, json.dumps(response.json(), indent=INDENT_SIZE))
+        else:
+            print "Request failed with status code: " + str(response.status_code)
+
+    def get_cluster_configuration(self, out_dir):
+        response = requests.get(self.url_cluster_configuration)
+        if response.status_code == 200:
+            file_name = 'cluster-configuration.json'
+            full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
+            FileWriter().write(full_out_path, json.dumps(response.json(), indent=INDENT_SIZE))
+        else:
+            print "Request failed with status code: " + str(response.status_code)
+
+    def get_topology_summary(self, out_dir):
+        response = requests.get(self.url_topology_summary)
+        if response.status_code == 200:
+            file_name = 'topology-summary.json'
+            full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
+            FileWriter().write(full_out_path, json.dumps(response.json(), indent=INDENT_SIZE))
+        else:
+            print "Request failed with status code: " + str(response.status_code)
+
+    def get_topology_stats_summary(self, out_dir):
+        summary_response = requests.get(self.url_topology_summary)
+        if summary_response.status_code == 200:
+            for feature, value in summary_response.json().iteritems():
+                if feature == 'topologies':
+                    for topology in value:
+                        for k, v in topology.iteritems():
+                            if k == 'id':
+                                print "Retrieving Storm topology stats summary for topology-id " + v
+                                response = requests.get(self.url_topology_stats_summary.format(v))
+                                if response.status_code == 200:
+                                    file_name = 'topology-{0}-stats-summary.json'.format(v)
+                                    full_out_path = os.path.join(out_dir, self.name.lower(), 'stats-summaries', file_name)
+                                    FileWriter().write(full_out_path, json.dumps(response.json(), indent=INDENT_SIZE))
+                                else:
+                                    print "Request failed with status code: " + str(response.status_code)
+        else:
+            print "Topology listing request failed with status code: " + str(summary_response.status_code)
 
 class KafkaInfo(InfoGatherer):
 
@@ -95,7 +150,7 @@ class KafkaInfo(InfoGatherer):
     def get_host(self):
         return self.host_info
 
-    def collect(self):
+    def collect(self, out_dir):
         pass
 
 class ZookeeperInfo(InfoGatherer):
@@ -106,7 +161,7 @@ class ZookeeperInfo(InfoGatherer):
     def get_host(self):
         return self.host_info
 
-    def collect(self):
+    def collect(self, out_dir):
         pass
 
 class MetronInfo(InfoGatherer):
@@ -117,7 +172,7 @@ class MetronInfo(InfoGatherer):
     def get_host(self):
         return self.host_info
 
-    def collect(self):
+    def collect(self, out_dir):
         pass
 
 class HdpInfo(InfoGatherer):
@@ -128,7 +183,7 @@ class HdpInfo(InfoGatherer):
     def get_host(self):
         return self.host_info
 
-    def collect(self):
+    def collect(self, out_dir):
         pass
 
 class ClusterInfo:
@@ -229,6 +284,7 @@ class ClusterInfo:
         #for getter in info_getters:
         #    getter.collect()
         info_getters[0].collect(out_dir)
+        info_getters[1].collect(out_dir)
 
 if __name__ == "__main__":
     ClusterInfo().main()
