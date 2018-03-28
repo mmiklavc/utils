@@ -6,6 +6,7 @@ METRON_DIR=$ROOT_DIR/metron
 STORM_DIR=$ROOT_DIR/storm
 KAFKA_DIR=$ROOT_DIR/kafka
 BUNDLE_NAME=metron-debug
+CLUSTER_NAME=metron_cluster
 
 # check env vars
 echo "Note: this script requires the following env vars to be set: AMBARI_URL, HDP_HOME, METRON_HOME, ZOOKEEPER, BROKERLIST, STORM_UI"
@@ -33,6 +34,9 @@ echo ""
 if [ ! -d "$ROOT_DIR" ]; then
     mkdir $ROOT_DIR
 fi
+if [ ! -d "$AMBARI_DIR" ]; then
+    mkdir $AMBARI_DIR
+fi
 if [ ! -d "$METRON_DIR" ]; then
     mkdir $METRON_DIR
 fi
@@ -45,7 +49,7 @@ fi
 
 # Ambari
 echo "Retrieving Ambari config detail"
-curl -s -u $ambari_user:$ambari_pass -H "X-Requested-By: ambari" -X GET  ${AMBARI_URL}'/api/v1/clusters/${CLUSTER_NAME}/configurations/service_config_versions?is_current=true' $AMBARI_DIR/ambari-cluster-config.json
+curl -s -u $ambari_user:$ambari_pass -H "X-Requested-By: ambari" -X GET  ${AMBARI_URL}'/api/v1/clusters/'${CLUSTER_NAME}'/configurations/service_config_versions?is_current=true' > $AMBARI_DIR/ambari-cluster-config.json
 
 # Storm
 echo "Retrieving Storm detail"
