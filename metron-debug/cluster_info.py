@@ -4,15 +4,16 @@ from optparse import OptionParser
 from requests.auth import HTTPBasicAuth
 from contextlib import closing
 import datetime
+import getpass
+import json
 import os
 import os.path
-import zlib
-import getpass
 import requests
-import json
+import shutil
 import subprocess
 import sys
 import tarfile
+import zlib
 
 INDENT_SIZE = 2
 
@@ -208,9 +209,40 @@ class MetronInfo(InfoGatherer):
         super(MetronInfo, self).__init__('Metron')
         self.metron_home = metron_home
         self.zookeeper_quorum = zookeeper_quorum
+        self.cmd_zk_load_configs = '''{0}/bin/zk_load_configs.sh -m DUMP -z {1}'''.format(self.metron_home, self.zookeeper_quorum)
+        self.cmd_metron_lib_list = '''ls -al {0}/lib'''.format(self.metron_home)
 
     def collect(self, out_dir):
-        pass
+        self.get_metron_config(out_dir)
+        self.get_metron_flux(out_dir)
+        self.get_metron_zk_config(out_dir)
+        self.get_lib_listing(out_dir)
+        self.get_rpm_listing(out_dir)
+    
+    def get_metron_config(self, out_dir):
+        print 'Copying ' + self.metron_home + '/config'
+        full_out_path = os.path.join(out_dir, self.name.lower(), 'config')
+        shutil.copytree(self.metron_home + '/config', full_out_path)
+
+    def get_metron_flux(self, out_dir):
+        print 'Copying ' + self.metron_home + '/flux'
+        full_out_path = os.path.join(out_dir, self.name.lower(), 'flux')
+        shutil.copytree(self.metron_home + '/flux', full_out_path)
+
+    def get_metron_zk_config(self, out_dir):
+        zk_config_dump = ShellHandler().ret_output(self.cmd_zk_load_configs)
+        full_out_path = os.path.join(out_dir, self.name.lower(), 'zk-configs.txt')
+        FileWriter().write(full_out_path, zk_config_dump)
+
+    def get_lib_listing(self, out_dir):
+        metron_lib_list = ShellHandler().ret_output(self.cmd_metron_lib_list)
+        full_out_path = os.path.join(out_dir, self.name.lower(), 'metron-libs-dir.txt')
+        FileWriter().write(full_out_path, metron_lib_list)
+
+    def get_rpm_listing(self, out_dir):
+        metron_rpm_list = ShellHandler().ret_output('''rpm -qa | grep 'metron\|elasticsearch\|kibana\'''')
+        full_out_path = os.path.join(out_dir, self.name.lower(), 'metron-rpm-list.txt')
+        FileWriter().write(full_out_path, metron_rpm_list)
 
 class HdpInfo(InfoGatherer):
 
@@ -219,7 +251,9 @@ class HdpInfo(InfoGatherer):
         self.hdp_home = hdp_home
 
     def collect(self, out_dir):
-        pass
+        hadoop_version_info = ShellHandler().ret_output('hadoop version')
+        full_out_path = os.path.join(out_dir, self.name.lower(), 'version-info.txt')
+        FileWriter().write(full_out_path, hadoop_version_info)
 
 class ClusterInfo:
 
