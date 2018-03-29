@@ -10,6 +10,7 @@ import zlib
 import getpass
 import requests
 import json
+import subprocess
 import sys
 import tarfile
 
@@ -37,25 +38,39 @@ class FileWriter(object):
             outfile.write(content)
         print "...done"
 
+class ShellHandler(object):
+
+    def __init__(self):
+        pass
+
+    # returns full stdout of process call
+    def call(self, command):
+        try:
+            return subprocess.call(command)
+        except OSError as e:
+            print >> sys.stderr, "Execution failed:", e
+    
+    # partly hijacked from Python 2.7+ check_output for use in 2.6
+    def ret_output(self, cmd):
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+        output, unused_err = process.communicate()
+        retcode = process.poll()
+        if retcode:
+            raise subprocess.CalledProcessError(retcode, cmd, output=output)
+        return output
+
 class InfoGatherer(object):
 
-    def __init__(self, name, host_info):
+    def __init__(self, name):
         self.name = name
-        self.host_info = host_info
-
-    def get_info_type(self):
-        return self.name
 
 class AmbariInfo(InfoGatherer):
 
     def __init__(self, host_info, cluster_name):
-        super(AmbariInfo, self).__init__('Ambari', host_info)
+        super(AmbariInfo, self).__init__('Ambari')
         self.cluster_name = cluster_name
         self.ambari_config_url = 'http://{0}/api/v1/clusters/{1}/configurations/service_config_versions'.format(host_info, cluster_name)
         self.params_payload = { 'is_current' : 'true' }
-
-    def get_host(self):
-        return self.host_info
 
     def collect(self, out_dir):
         print "Ambari request URL: " + self.ambari_config_url
@@ -82,15 +97,12 @@ class AmbariInfo(InfoGatherer):
 class StormInfo(InfoGatherer):
 
     def __init__(self, host_info):
-        super(StormInfo, self).__init__('Storm', host_info)
+        super(StormInfo, self).__init__('Storm')
         url_base = 'http://{0}/api/v1'.format(host_info)
         self.url_cluster_summary = url_base + '/cluster/summary'
         self.url_cluster_configuration = url_base + '/cluster/configuration'
         self.url_topology_summary = url_base + '/topology/summary'
         self.url_topology_stats_summary = url_base + '/topology/{0}?sys=1'
-
-    def get_host(self):
-        return self.host_info
 
     def collect(self, out_dir):
         self.get_cluster_summary(out_dir)
@@ -146,44 +158,59 @@ class StormInfo(InfoGatherer):
 
 class KafkaInfo(InfoGatherer):
 
-    def __init__(self, host_info):
-        super(KafkaInfo, self).__init__('Kafka', host_info)
-
-    def get_host(self):
-        return self.host_info
+    def __init__(self, broker_list, zookeeper_quorum, hdp_home):
+        super(KafkaInfo, self).__init__('Kafka')
+        self.broker_list = broker_list
+        self.zookeeper_quorum = zookeeper_quorum
+        self.hdp_home = hdp_home
 
     def collect(self, out_dir):
+        print "Retrieving Kafka detail"
+        self.get_broker_info(out_dir)
+        self.get_kafka_topics(out_dir)
+        self.get_topic_detail(out_dir)
+
+    def get_broker_info(self, out_dir):
+        print "Retrieving Kafka broker info"
+        # note, need to escape the last single quote with the trim command so the string literal works
+        broker_id_cmd = '''{0}/kafka-broker/bin/zookeeper-shell.sh {1} <<< "ls /brokers/ids" | grep -e '\[.*\]' | tr -d [] | tr , ' \''''.format(self.hdp_home, self.zookeeper_quorum)
+        broker_ids = ShellHandler().ret_output(broker_id_cmd)
+        for broker in broker_ids.strip().split(','):
+            file_name = 'kafka-broker-{0}-info.txt'.format(broker)
+            full_out_path = os.path.join(out_dir, self.name.lower(), 'broker-info', file_name)
+            broker_data_cmd = '''echo "get /brokers/ids/{0}" | {1}/kafka-broker/bin/zookeeper-shell.sh {2} 2>&1'''.format(broker, self.hdp_home, self.zookeeper_quorum)
+            broker_data = ShellHandler().ret_output(broker_data_cmd)
+            FileWriter().write(full_out_path, broker_data)
+
+    def get_kafka_topics(self, out_dir):
+        # Get list of Kafka topics
+        #echo "Retrieving Kafka topics list"
+        #${HDP_HOME}/kafka-broker/bin/kafka-topics.sh --zookeeper $ZOOKEEPER --list >> $KAFKA_DIR/kafka-topics.txt
         pass
 
-class ZookeeperInfo(InfoGatherer):
-
-    def __init__(self, host_info):
-        super(ZookeeperInfo, self).__init__('Zookeeper', host_info)
-
-    def get_host(self):
-        return self.host_info
-
-    def collect(self, out_dir):
+    def get_topic_detail(self, out_dir):
+        # Get Kafka topic details
+        #echo "Retrieving Kafka enrichment topic details"
+        #${HDP_HOME}/kafka-broker/bin/kafka-topics.sh --zookeeper $ZOOKEEPER --topic enrichments --describe >> $KAFKA_DIR/kafka-enrichments-topic.txt
+        #echo "Retrieving Kafka indexing topic details"
+        #${HDP_HOME}/kafka-broker/bin/kafka-topics.sh --zookeeper $ZOOKEEPER --topic indexing --describe >> $KAFKA_DIR/kafka-indexing-topic.txt
         pass
 
 class MetronInfo(InfoGatherer):
 
-    def __init__(self, host_info):
-        super(MetronInfo, self).__init__('Metron', host_info)
-
-    def get_host(self):
-        return self.host_info
+    def __init__(self, metron_home, zookeeper_quorum):
+        super(MetronInfo, self).__init__('Metron')
+        self.metron_home = metron_home
+        self.zookeeper_quorum = zookeeper_quorum
 
     def collect(self, out_dir):
         pass
 
 class HdpInfo(InfoGatherer):
 
-    def __init__(self, host_info):
-        super(HdpInfo, self).__init__('HDP', host_info)
-
-    def get_host(self):
-        return self.host_info
+    def __init__(self, hdp_home):
+        super(HdpInfo, self).__init__('HDP')
+        self.hdp_home = hdp_home
 
     def collect(self, out_dir):
         pass
@@ -278,9 +305,8 @@ class ClusterInfo:
         info_getters = [
                 AmbariInfo(ambari_host, cluster_name),
                 StormInfo(storm_host),
-                KafkaInfo(broker_list),
-                ZookeeperInfo(zookeeper_quorum),
-                MetronInfo(metron_home),
+                KafkaInfo(broker_list, zookeeper_quorum, hdp_home),
+                MetronInfo(metron_home, zookeeper_quorum),
                 HdpInfo(hdp_home)
         ]
         for getter in info_getters:
