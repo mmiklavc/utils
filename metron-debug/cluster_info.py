@@ -163,6 +163,12 @@ class KafkaInfo(InfoGatherer):
         self.broker_list = broker_list
         self.zookeeper_quorum = zookeeper_quorum
         self.hdp_home = hdp_home
+        # note, need to escape the last single quote with the trim command so the string literal works
+        self.cmd_broker_id = '''{0}/kafka-broker/bin/zookeeper-shell.sh {1} <<< "ls /brokers/ids" | grep -e '\[.*\]' | tr -d [] | tr , ' \''''.format(self.hdp_home, self.zookeeper_quorum)
+        # broker id is dynamic and replaced later
+        self.cmd_broker_info = '''echo "get /brokers/ids/{0}" | {1}/kafka-broker/bin/zookeeper-shell.sh {2} 2>&1'''.format('{0}', self.hdp_home, self.zookeeper_quorum)
+        self.cmd_kafka_topics = '''{0}/kafka-broker/bin/kafka-topics.sh --zookeeper {1} --list'''.format(self.hdp_home, self.zookeeper_quorum)
+        self.cmd_topic_detail = '''{0}/kafka-broker/bin/kafka-topics.sh --zookeeper {1} --topic {2} --describe'''.format(self.hdp_home, self.zookeeper_quorum, '{0}')
 
     def collect(self, out_dir):
         print "Retrieving Kafka detail"
@@ -172,29 +178,29 @@ class KafkaInfo(InfoGatherer):
 
     def get_broker_info(self, out_dir):
         print "Retrieving Kafka broker info"
-        # note, need to escape the last single quote with the trim command so the string literal works
-        broker_id_cmd = '''{0}/kafka-broker/bin/zookeeper-shell.sh {1} <<< "ls /brokers/ids" | grep -e '\[.*\]' | tr -d [] | tr , ' \''''.format(self.hdp_home, self.zookeeper_quorum)
-        broker_ids = ShellHandler().ret_output(broker_id_cmd)
+        broker_ids = ShellHandler().ret_output(self.cmd_broker_id)
         for broker in broker_ids.strip().split(','):
             file_name = 'kafka-broker-{0}-info.txt'.format(broker)
             full_out_path = os.path.join(out_dir, self.name.lower(), 'broker-info', file_name)
-            broker_data_cmd = '''echo "get /brokers/ids/{0}" | {1}/kafka-broker/bin/zookeeper-shell.sh {2} 2>&1'''.format(broker, self.hdp_home, self.zookeeper_quorum)
-            broker_data = ShellHandler().ret_output(broker_data_cmd)
+            broker_data = ShellHandler().ret_output(self.cmd_broker_info.format(broker))
             FileWriter().write(full_out_path, broker_data)
 
     def get_kafka_topics(self, out_dir):
-        # Get list of Kafka topics
-        #echo "Retrieving Kafka topics list"
-        #${HDP_HOME}/kafka-broker/bin/kafka-topics.sh --zookeeper $ZOOKEEPER --list >> $KAFKA_DIR/kafka-topics.txt
-        pass
+        file_name = 'kafka-topics.txt'
+        full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
+        topic_list = ShellHandler().ret_output(self.cmd_kafka_topics)
+        FileWriter().write(full_out_path, topic_list)
 
     def get_topic_detail(self, out_dir):
-        # Get Kafka topic details
-        #echo "Retrieving Kafka enrichment topic details"
-        #${HDP_HOME}/kafka-broker/bin/kafka-topics.sh --zookeeper $ZOOKEEPER --topic enrichments --describe >> $KAFKA_DIR/kafka-enrichments-topic.txt
-        #echo "Retrieving Kafka indexing topic details"
-        #${HDP_HOME}/kafka-broker/bin/kafka-topics.sh --zookeeper $ZOOKEEPER --topic indexing --describe >> $KAFKA_DIR/kafka-indexing-topic.txt
-        pass
+        file_name = 'kafka-enrichments-topic.txt'
+        full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
+        enrichment_topic_detail = ShellHandler().ret_output(self.cmd_topic_detail.format('enrichments'))
+        FileWriter().write(full_out_path, enrichment_topic_detail)
+
+        file_name = 'kafka-indexing-topic.txt'
+        full_out_path = os.path.join(out_dir, self.name.lower(), file_name)
+        indexing_topic_detail = ShellHandler().ret_output(self.cmd_topic_detail.format('indexing'))
+        FileWriter().write(full_out_path, indexing_topic_detail)
 
 class MetronInfo(InfoGatherer):
 
